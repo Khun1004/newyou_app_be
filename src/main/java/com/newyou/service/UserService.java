@@ -4,12 +4,12 @@ import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.newyou.dto.ProfileUpdateRequest;
 import com.newyou.entity.User;
 import com.newyou.repository.UserRepository;
+import com.newyou.sms.SmsSendException;
+import com.newyou.sms.SmsSender;
 
 @Service
 public class UserService {
@@ -31,71 +33,139 @@ public class UserService {
     @Value("${file.upload-dir:./uploads/profiles}")
     private String uploadDir;
 
-    // 인메모리 인증 코드 저장소 (실제 서비스에서는 Redis/DB를 사용해야 함)
-    private final Map<String, VerificationInfo> verificationCodes = new HashMap<>();
+    // 문자 발송기 (sms.provider 설정에 따라 콘솔 / 솔라피 중 하나가 주입됨)
+    private final SmsSender smsSender;
+
+    private static final long CODE_TTL_MS = 5 * 60 * 1000; // 인증번호 유효시간 5분
+    private static final long RESEND_COOLDOWN_MS = 60 * 1000; // 재발송 대기 60초
+    private static final long VERIFIED_TTL_MS = 30 * 60 * 1000; // 인증 완료 후 가입 가능 시간 30분
+    private static final int MAX_ATTEMPTS = 5; // 인증번호 입력 최대 시도 횟수
+
+    // 인메모리 저장소 (서버 1대 기준. 서버를 여러 대로 늘리면 Redis/DB로 옮겨야 함)
+    private final Map<String, VerificationInfo> verificationCodes = new ConcurrentHashMap<>();
+    private final Map<String, Long> verifiedPhones = new ConcurrentHashMap<>(); // 번호 → 만료시각
+    private final SecureRandom secureRandom = new SecureRandom();
 
     @Autowired
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, SmsSender smsSender) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.smsSender = smsSender;
     }
 
     private static class VerificationInfo {
-        String code;
-        long expiryTime;
+        final String code;
+        final long createdAt;
+        final long expiryTime;
+        int attempts = 0;
 
-        public VerificationInfo(String code) {
+        VerificationInfo(String code) {
             this.code = code;
-            this.expiryTime = System.currentTimeMillis() + 5 * 60 * 1000; // 5분
+            this.createdAt = System.currentTimeMillis();
+            this.expiryTime = createdAt + CODE_TTL_MS;
         }
 
-        public boolean isExpired() {
+        boolean isExpired() {
             return System.currentTimeMillis() > expiryTime;
         }
+    }
+
+    /** 숫자만 남기고, 한국 휴대폰 번호 형식(01X로 시작하는 10~11자리)인지 확인합니다. */
+    private String normalizePhone(String phoneNumber) {
+        String digits = phoneNumber == null ? "" : phoneNumber.replaceAll("[^0-9]", "");
+        if (!digits.matches("01[016789]\\d{7,8}")) {
+            throw new IllegalArgumentException("올바른 휴대폰 번호를 입력해 주세요.");
+        }
+        return digits;
     }
 
     // =======================================================================
     // 1. 휴대폰 인증 로직 (AuthController 사용)
     // =======================================================================
 
-    /**
-     * 휴대폰 인증 코드를 생성하고 저장합니다. (실제로는 SMS 전송 로직이 필요)
-     */
-    public void sendVerificationCode(String phoneNumber) {
-        // 6자리 랜덤 인증번호 생성
-        String code = String.format("%06d", ThreadLocalRandom.current().nextInt(1000000));
-
-        // 인메모리 저장소에 저장 (5분 만료)
-        verificationCodes.put(phoneNumber, new VerificationInfo(code));
-
-        // 💡 실제로는 여기서 외부 SMS API를 호출하여 사용자에게 코드를 전송합니다.
-        // 현재는 콘솔에 출력하여 테스트용으로 사용합니다.
-        System.out.println("[SMS MOCK] " + phoneNumber + "로 인증번호 발송: " + code);
+    /** 실제 문자가 발송되는 모드인지 (false = 콘솔 개발 모드) */
+    public boolean isRealSmsMode() {
+        return smsSender.deliversRealSms();
     }
 
     /**
-     * 휴대폰 인증 코드를 검증합니다.
-     * 
-     * @throws RuntimeException 인증번호가 없거나 만료된 경우
+     * 6자리 인증번호를 만들어 저장하고, 문자로 발송합니다.
+     *
+     * @return 생성된 인증번호 (콘솔 개발 모드에서 앱 화면에 보여주기 위해 사용)
+     * @throws IllegalArgumentException 번호 형식 오류 / 재발송 대기 중
+     * @throws SmsSendException         문자 발송 실패
+     */
+    public String sendVerificationCode(String phoneNumber) {
+        String phone = normalizePhone(phoneNumber);
+
+        VerificationInfo previous = verificationCodes.get(phone);
+        if (previous != null) {
+            long waitMs = previous.createdAt + RESEND_COOLDOWN_MS - System.currentTimeMillis();
+            if (waitMs > 0) {
+                throw new IllegalArgumentException(
+                        "인증번호를 이미 보냈습니다. " + ((waitMs / 1000) + 1) + "초 후에 다시 요청해 주세요.");
+            }
+        }
+
+        String code = String.format("%06d", secureRandom.nextInt(1_000_000));
+
+        // 먼저 문자를 보내고, 성공했을 때만 저장합니다. (실패하면 바로 다시 요청할 수 있도록)
+        smsSender.send(phone, "[NewYou] 인증번호 [" + code + "]를 입력해 주세요. (5분 내 유효)");
+
+        verificationCodes.put(phone, new VerificationInfo(code));
+        verifiedPhones.remove(phone);
+        return code;
+    }
+
+    /**
+     * 휴대폰 인증 코드를 검증합니다. 성공하면 30분 동안 회원가입이 가능해집니다.
+     *
+     * @throws RuntimeException 인증번호가 없거나 만료되었거나 시도 횟수를 초과한 경우
      */
     public boolean verifyCode(String phoneNumber, String code) {
-        VerificationInfo info = verificationCodes.get(phoneNumber);
+        String phone = normalizePhone(phoneNumber);
+        VerificationInfo info = verificationCodes.get(phone);
 
         if (info == null) {
             throw new RuntimeException("인증번호를 먼저 요청해 주세요.");
         }
 
         if (info.isExpired()) {
-            verificationCodes.remove(phoneNumber); // 만료된 코드 제거
+            verificationCodes.remove(phone);
             throw new RuntimeException("인증 시간이 만료되었습니다. 다시 요청해 주세요.");
         }
 
         if (info.code.equals(code)) {
-            verificationCodes.remove(phoneNumber); // 성공 시 코드 제거
+            verificationCodes.remove(phone);
+            verifiedPhones.put(phone, System.currentTimeMillis() + VERIFIED_TTL_MS);
             return true;
         }
 
+        info.attempts++;
+        if (info.attempts >= MAX_ATTEMPTS) {
+            verificationCodes.remove(phone);
+            throw new RuntimeException("인증번호를 " + MAX_ATTEMPTS + "회 틀렸습니다. 인증번호를 다시 요청해 주세요.");
+        }
+
         return false;
+    }
+
+    /** 이 번호가 최근 30분 안에 휴대폰 인증을 마쳤는지 확인합니다. */
+    public boolean isPhoneVerified(String phoneNumber) {
+        String phone = normalizePhone(phoneNumber);
+        Long expiry = verifiedPhones.get(phone);
+        if (expiry == null)
+            return false;
+        if (System.currentTimeMillis() > expiry) {
+            verifiedPhones.remove(phone);
+            return false;
+        }
+        return true;
+    }
+
+    /** 가입이 끝난 번호의 인증 기록을 지웁니다. (같은 인증으로 두 번 가입 방지) */
+    public void consumePhoneVerification(String phoneNumber) {
+        verifiedPhones.remove(normalizePhone(phoneNumber));
     }
 
     // =======================================================================

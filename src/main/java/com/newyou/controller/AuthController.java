@@ -17,6 +17,7 @@ import com.newyou.dto.VerifyRequest;
 import com.newyou.entity.User;
 import com.newyou.security.JwtTokenProvider;
 import com.newyou.service.UserService;
+import com.newyou.sms.SmsSendException;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,13 +40,29 @@ public class AuthController {
         String phoneNumber = phoneRequest.getPhoneNumber();
 
         try {
-            userService.sendVerificationCode(phoneNumber);
-            return ResponseEntity.ok("인증번호가 성공적으로 발송되었습니다.");
+            String code = userService.sendVerificationCode(phoneNumber);
+
+            if (userService.isRealSmsMode()) {
+                return ResponseEntity.ok(Map.of("message", "인증번호가 발송되었습니다. 문자를 확인해 주세요."));
+            }
+
+            // 🧪 콘솔(개발) 모드: 실제 문자가 가지 않으므로 앱 화면에 인증번호를 보여줍니다.
+            // SMS_PROVIDER=solapi 로 실행하면 이 값은 응답에 포함되지 않습니다.
+            return ResponseEntity.ok(Map.of(
+                    "message", "[개발 모드] 인증번호: " + code,
+                    "devCode", code));
+        } catch (IllegalArgumentException e) {
+            // 번호 형식 오류, 재발송 대기 중
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (SmsSendException e) {
+            log.error("인증 문자 발송 실패: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(Map.of("message", "문자 발송에 실패했습니다. 잠시 후 다시 시도해 주세요."));
         } catch (Exception e) {
-            log.error("인증번호 발송 중 오류 발생: {}", e.getMessage());
+            log.error("인증번호 발송 중 오류 발생", e);
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("인증번호 발송 중 오류가 발생했습니다.");
+                    .body(Map.of("message", "인증번호 발송 중 오류가 발생했습니다."));
         }
     }
 
@@ -76,27 +93,43 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody RegisterRequest registerRequest) {
-        if (userService.isPhoneNumberExists(registerRequest.getPhoneNumber())) {
-            return ResponseEntity
-                    .status(HttpStatus.BAD_REQUEST)
-                    .body("이미 등록된 전화번호입니다.");
+        String phone = registerRequest.getPhoneNumber() == null
+                ? ""
+                : registerRequest.getPhoneNumber().replaceAll("[^0-9]", "");
+
+        try {
+            // 서버에서도 휴대폰 인증 완료 여부를 확인합니다. (앱을 거치지 않은 가입 요청 차단)
+            if (!userService.isPhoneVerified(phone)) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("message", "휴대폰 인증을 먼저 완료해 주세요."));
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+
+        if (userService.isPhoneNumberExists(phone)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "이미 등록된 전화번호입니다."));
         }
 
         User newUser = new User();
-        newUser.setPhoneNumber(registerRequest.getPhoneNumber());
+        newUser.setPhoneNumber(phone);
         newUser.setName(registerRequest.getName());
         newUser.setPassword(registerRequest.getPassword());
 
         try {
             userService.registerUser(newUser);
+            userService.consumePhoneVerification(phone);
             return ResponseEntity
                     .status(HttpStatus.CREATED)
-                    .body("회원가입이 성공적으로 완료되었습니다.");
+                    .body(Map.of("message", "회원가입이 성공적으로 완료되었습니다."));
+        } catch (IllegalArgumentException e) {
+            // 닉네임 중복 등
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         } catch (Exception e) {
-            log.error("사용자 등록 중 오류 발생: {}", e.getMessage());
+            log.error("사용자 등록 중 오류 발생", e);
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("사용자 등록 중 오류가 발생했습니다.");
+                    .body(Map.of("message", "사용자 등록 중 오류가 발생했습니다."));
         }
     }
 
