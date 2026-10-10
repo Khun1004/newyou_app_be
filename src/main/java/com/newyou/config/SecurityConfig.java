@@ -59,6 +59,7 @@ public class SecurityConfig {
 
                     auth
                             .requestMatchers("/api/auth/**").permitAll()
+                            .requestMatchers("/images/profile/**").permitAll()
                             .requestMatchers("/uploads/profiles/**").permitAll()
                             .requestMatchers("/uploads/voices/**").permitAll()
                             // 🚨 수정: 친구 프로필 경로에 대한 permitAll() 추가

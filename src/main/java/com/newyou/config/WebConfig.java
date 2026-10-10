@@ -12,7 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("${file.upload-dir:./uploads/profiles}")
+    @Value("${file.upload-dir:images/profile}")
     private String uploadDir; // 사용자 프로필 경로
 
     @Value("${file.upload-dir.voice:./uploads/voices}")
@@ -23,9 +23,14 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // 1. 사용자 프로필 파일 핸들러 (기존)
-        registry.addResourceHandler("/uploads/profiles/**")
+        // 1. 사용자 프로필 사진: /images/profile/파일이름  →  images/profile 폴더
+        registry.addResourceHandler("/images/profile/**")
                 .addResourceLocations("file:" + uploadDir + "/")
+                .setCachePeriod(3600);
+
+        // 1-1. 예전에 올린 프로필 사진(/uploads/profiles/...)도 계속 보이게 남겨 둬요
+        registry.addResourceHandler("/uploads/profiles/**")
+                .addResourceLocations("file:uploads/profiles/")
                 .setCachePeriod(3600);
 
         // 2. 음성 파일 핸들러 (기존)

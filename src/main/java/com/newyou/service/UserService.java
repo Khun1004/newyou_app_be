@@ -30,16 +30,16 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
 
     // application.properties에서 설정: file.upload-dir=C:/newyou_uploads/profiles
-    @Value("${file.upload-dir:./uploads/profiles}")
+    @Value("${file.upload-dir:images/profile}")
     private String uploadDir;
 
     // 문자 발송기 (sms.provider 설정에 따라 콘솔 / 솔라피 중 하나가 주입됨)
     private final SmsSender smsSender;
 
-    private static final long CODE_TTL_MS = 5 * 60 * 1000; // 인증번호 유효시간 5분
-    private static final long RESEND_COOLDOWN_MS = 60 * 1000; // 재발송 대기 60초
-    private static final long VERIFIED_TTL_MS = 30 * 60 * 1000; // 인증 완료 후 가입 가능 시간 30분
-    private static final int MAX_ATTEMPTS = 5; // 인증번호 입력 최대 시도 횟수
+    private static final long CODE_TTL_MS = 5 * 60 * 1000;       // 인증번호 유효시간 5분
+    private static final long RESEND_COOLDOWN_MS = 60 * 1000;    // 재발송 대기 60초
+    private static final long VERIFIED_TTL_MS = 30 * 60 * 1000;  // 인증 완료 후 가입 가능 시간 30분
+    private static final int MAX_ATTEMPTS = 5;                   // 인증번호 입력 최대 시도 횟수
 
     // 인메모리 저장소 (서버 1대 기준. 서버를 여러 대로 늘리면 Redis/DB로 옮겨야 함)
     private final Map<String, VerificationInfo> verificationCodes = new ConcurrentHashMap<>();
@@ -154,8 +154,7 @@ public class UserService {
     public boolean isPhoneVerified(String phoneNumber) {
         String phone = normalizePhone(phoneNumber);
         Long expiry = verifiedPhones.get(phone);
-        if (expiry == null)
-            return false;
+        if (expiry == null) return false;
         if (System.currentTimeMillis() > expiry) {
             verifiedPhones.remove(phone);
             return false;
@@ -211,9 +210,9 @@ public class UserService {
 
     /**
      * Base64 문자열을 디코딩하여 서버 파일 시스템에 저장하고, 저장된 경로를 반환합니다.
-     * 
+     *
      * @param base64Image "data:image/png;base64,..." 형식의 문자열
-     * @return 저장된 파일의 공용 접근 경로 (예: /uploads/profiles/UUID.png)
+     * @return 저장된 파일의 공용 접근 경로 (예: /images/profile/UUID.png)
      * @throws IllegalArgumentException Base64 형식 오류 시
      * @throws RuntimeException         이미지 저장 중 IO 오류 시
      */
@@ -256,7 +255,7 @@ public class UserService {
             // 'uploadDir'이 './uploads/profiles'라면, 저장 경로는 '/uploads/profiles/UUID.jpg'가 되어야
             // 합니다.
             // 여기서는 환경 설정에 따라 상대 경로를 반환합니다.
-            String relativePath = "/uploads/profiles/" + fileName;
+            String relativePath = "/images/profile/" + fileName;
             return relativePath;
 
         } catch (Exception e) {
