@@ -2,6 +2,7 @@ package com.newyou.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -59,6 +60,11 @@ public class SecurityConfig {
 
                     auth
                             .requestMatchers("/api/auth/**").permitAll()
+                            // 에러 화면(/error)은 열어 둬요 → 진짜 에러(404, 500)와 메시지가 앱에 그대로 보여요
+                            //   (막아 두면 모든 에러가 403 으로 바뀌어서 원인을 알 수 없어요)
+                            .requestMatchers("/error").permitAll()
+                            // 게시판·온라인 수업 목록은 로그인 없이도 볼 수 있어요 (쓰기는 로그인 필요)
+                            .requestMatchers(HttpMethod.GET, "/api/boards", "/api/classes").permitAll()
                             .requestMatchers("/images/profile/**").permitAll()
                             .requestMatchers("/uploads/profiles/**").permitAll()
                             .requestMatchers("/uploads/voices/**").permitAll()
