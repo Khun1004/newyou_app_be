@@ -18,6 +18,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -36,6 +37,10 @@ public class User implements UserDetails {
     @Column(unique = true, nullable = false, length = 15)
     private String phoneNumber;
 
+    // 로그인 아이디 (영어 소문자·숫자·밑줄 4~16자). 예전 회원은 비어 있을 수 있어요 → 전화번호로 로그인
+    @Column(unique = true, length = 20)
+    private String loginId;
+
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) // 요청 시에만 받고, 응답에는 포함하지 않음
     @Column(nullable = false)
     private String password; // 암호화된 비밀번호
@@ -45,6 +50,11 @@ public class User implements UserDetails {
 
     @Column(length = 500)
     private String profileImage;
+
+    // 메모 잠금 비밀번호(PIN 4자리) — 암호화해서 저장해요. 화면/응답에는 절대 보내지 않아요.
+    @JsonIgnore
+    @Column(length = 100)
+    private String notePin;
 
     @CreationTimestamp
     @Column(updatable = false)

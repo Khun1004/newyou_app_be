@@ -21,4 +21,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     // 닉네임 존재 여부 확인
     boolean existsByName(String name);
+
+    // 아이디로 사용자 찾기 / 아이디 중복 확인
+    Optional<User> findByLoginId(String loginId);
+
+    boolean existsByLoginId(String loginId);
 }

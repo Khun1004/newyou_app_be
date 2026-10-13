@@ -191,6 +191,66 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    // =======================================================================
+    // 아이디 (로그인 아이디)
+    // =======================================================================
+
+    /** 아이디 규칙: 영어 소문자로 시작, 소문자·숫자·밑줄(_) 4~16자 */
+    public static final String LOGIN_ID_RULE = "^[a-z][a-z0-9_]{3,15}$";
+
+    /** 아이디를 정리(앞뒤 공백 제거, 소문자)하고 규칙을 확인해요 */
+    public String normalizeLoginId(String loginId) {
+        String id = loginId == null ? "" : loginId.trim().toLowerCase();
+        if (!id.matches(LOGIN_ID_RULE)) {
+            throw new IllegalArgumentException("아이디는 영어 소문자로 시작하는 4~16자(소문자·숫자·_)로 만들어 주세요.");
+        }
+        return id;
+    }
+
+    public boolean isLoginIdTaken(String loginId) {
+        return userRepository.existsByLoginId(loginId);
+    }
+
+    /** 전화번호 인증을 마친 사람의 계정 찾기 (아이디 찾기) */
+    public Optional<User> findByVerifiedPhone(String phoneNumber) {
+        String phone = normalizePhone(phoneNumber);
+        if (!isPhoneVerified(phone)) {
+            throw new IllegalArgumentException("휴대폰 인증을 먼저 완료해 주세요.");
+        }
+        return userRepository.findByPhoneNumber(phone);
+    }
+
+    /** 비밀번호 다시 만들기 (휴대폰 인증 + 아이디/전화번호가 같은 계정일 때만) */
+    @Transactional
+    public void resetPassword(String loginId, String phoneNumber, String newPassword) {
+        String phone = normalizePhone(phoneNumber);
+        if (!isPhoneVerified(phone)) {
+            throw new IllegalArgumentException("휴대폰 인증을 먼저 완료해 주세요.");
+        }
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new IllegalArgumentException("비밀번호는 6자리 이상이어야 합니다.");
+        }
+        User user = userRepository.findByPhoneNumber(phone)
+                .orElseThrow(() -> new IllegalArgumentException("이 번호로 가입한 계정이 없어요."));
+        // 아이디가 있는 계정이면 아이디도 맞아야 해요
+        if (user.getLoginId() != null && loginId != null && !loginId.isBlank()
+                && !user.getLoginId().equalsIgnoreCase(loginId.trim())) {
+            throw new IllegalArgumentException("아이디와 전화번호가 같은 계정이 아니에요.");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        consumePhoneVerification(phone);
+    }
+
+    /** 아이디 또는 전화번호 + 비밀번호로 로그인 */
+    public User authenticateByLoginId(String loginId, String password) {
+        Optional<User> userOptional = userRepository.findByLoginId(loginId == null ? "" : loginId.trim().toLowerCase());
+        if (userOptional.isPresent() && passwordEncoder.matches(password, userOptional.get().getPassword())) {
+            return userOptional.get();
+        }
+        return null;
+    }
+
     public User authenticate(String phoneNumber, String password) {
         Optional<User> userOptional = userRepository.findByPhoneNumber(phoneNumber);
 

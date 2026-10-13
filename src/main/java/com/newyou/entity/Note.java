@@ -40,6 +40,10 @@ public class Note {
     @Column(length = 50) // 👈 디자인 필드 추가
     private String design;
 
+    // 🔒 잠긴 메모인지 (잠긴 메모는 PIN을 넣어야 내용을 볼 수 있어요)
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
+    private boolean locked = false;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
