@@ -23,7 +23,7 @@ import lombok.Setter;
 /**
  * 친구 정보(생일, 프로필 색상 등)를 저장하는 엔티티입니다.
  * user_id를 통해 특정 사용자의 친구임을 식별합니다.
- * 
+ *
  * @Getter/@Setter/@Builder를 통해 DTO에서 필요로 하는 모든 접근 메서드를 제공합니다.
  */
 @Entity
@@ -73,6 +73,17 @@ public class Friend {
     // 메모
     @Column(length = 1000)
     private String memo;
+
+    // 💞 관계 (family 가족 / friend 친구 / lover 연인 / spouse 배우자 / coworker 동료), 없으면 null
+    @Column(length = 20)
+    private String relation;
+
+    // 🔗 이 친구가 New You를 쓰면 그 사람의 계정과 연결해요 (아이디로 연결)
+    //    연결하면 내가 올린 상태(스토리)를 그 친구가 볼 수 있어요.
+    private Long linkedUserId;
+
+    @Column(length = 20)
+    private String linkedLoginId;
 
     @CreationTimestamp
     @Column(updatable = false)

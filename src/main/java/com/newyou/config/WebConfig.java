@@ -15,6 +15,15 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${file.upload-dir:images/profile}")
     private String uploadDir; // 사용자 프로필 경로
 
+    @Value("${file.upload-dir.status:images/status}")
+    private String statusDir; // 상태(스토리) 사진 경로
+
+    @Value("${file.upload-dir.anniv:images/anniv}")
+    private String annivDir; // 기념일 배경 사진 경로
+
+    @Value("${file.upload-dir.reels:images/reels}")
+    private String reelsDir; // 릴스 동영상 경로
+
     @Value("${file.upload-dir.voice:./uploads/voices}")
     private String voiceUploadDir; // 음성 파일 경로
 
@@ -26,6 +35,21 @@ public class WebConfig implements WebMvcConfigurer {
         // 1. 사용자 프로필 사진: /images/profile/파일이름  →  images/profile 폴더
         registry.addResourceHandler("/images/profile/**")
                 .addResourceLocations("file:" + uploadDir + "/")
+                .setCachePeriod(3600);
+
+        // 1-0. 💬 상태(스토리) 사진: /images/status/파일이름  →  images/status 폴더
+        registry.addResourceHandler("/images/status/**")
+                .addResourceLocations("file:" + statusDir + "/")
+                .setCachePeriod(3600);
+
+        // 1-0-1. 💝 기념일 배경 사진: /images/anniv/파일이름 → images/anniv 폴더
+        registry.addResourceHandler("/images/anniv/**")
+                .addResourceLocations("file:" + annivDir + "/")
+                .setCachePeriod(3600);
+
+        // 1-0-2. 🎬 릴스 동영상: /images/reels/파일이름 → images/reels 폴더
+        registry.addResourceHandler("/images/reels/**")
+                .addResourceLocations("file:" + reelsDir + "/")
                 .setCachePeriod(3600);
 
         // 1-1. 예전에 올린 프로필 사진(/uploads/profiles/...)도 계속 보이게 남겨 둬요

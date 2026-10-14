@@ -66,6 +66,10 @@ public class SecurityConfig {
                             // 게시판·온라인 수업 목록은 로그인 없이도 볼 수 있어요 (쓰기는 로그인 필요)
                             .requestMatchers(HttpMethod.GET, "/api/boards", "/api/classes").permitAll()
                             .requestMatchers("/images/profile/**").permitAll()
+                            // 💬 상태 사진 (파일 이름이 무작위라 주소를 아는 사람만 볼 수 있어요)
+                            .requestMatchers("/images/status/**").permitAll()
+                            .requestMatchers("/images/anniv/**").permitAll()
+                            .requestMatchers("/images/reels/**").permitAll()
                             .requestMatchers("/uploads/profiles/**").permitAll()
                             .requestMatchers("/uploads/voices/**").permitAll()
                             // 🚨 수정: 친구 프로필 경로에 대한 permitAll() 추가
