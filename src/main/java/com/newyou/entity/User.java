@@ -56,6 +56,15 @@ public class User implements UserDetails {
     @Column(length = 100)
     private String notePin;
 
+    // 🔒 공개 설정 (기념일 관리 → 공개 설정)
+    //  true  = 연결한 친구에게 보여요 (공개)
+    //  false = 나만 볼 수 있어요 (비공개)
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT TRUE")
+    private boolean storyPublic = true; // 📷 사진 스토리
+
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT TRUE")
+    private boolean notePublic = true; // 💬 글 스토리 노트
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

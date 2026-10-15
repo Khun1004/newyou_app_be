@@ -1,5 +1,6 @@
 package com.newyou.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -26,4 +27,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByLoginId(String loginId);
 
     boolean existsByLoginId(String loginId);
+
+    // 🌱 뉴유 친구 찾기: 최근 가입한 사람 / 이름·아이디로 찾기 (아이디가 있는 사람만)
+    List<User> findTop100ByLoginIdIsNotNullOrderByCreatedAtDesc();
+
+    List<User> findTop50ByLoginIdContainingIgnoreCaseOrNameContainingIgnoreCase(String loginId, String name);
 }

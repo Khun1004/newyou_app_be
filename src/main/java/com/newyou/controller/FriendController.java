@@ -138,6 +138,67 @@ public class FriendController {
     }
 
     // =======================================================================
+    // 🔍 아이디로 New You 사용자 찾기 (GET /api/friends/search?loginId=xxx)
+    // =======================================================================
+    @GetMapping("/search")
+    public ResponseEntity<?> searchByLoginId(
+            @AuthenticationPrincipal User user,
+            @RequestParam("loginId") String loginId) {
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "로그인이 필요해요."));
+        }
+        try {
+            return ResponseEntity.ok(friendService.searchByLoginId(user.getId(), loginId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            log.error("❌ 아이디 검색 오류", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "서버 오류: " + e.getMessage()));
+        }
+    }
+
+    // =======================================================================
+    // 🌱 New You 사용자 목록 (GET /api/friends/discover?q=xxx)
+    //    이미 친구인 사람과 나는 빼고, 나를 추가한 사람이 먼저 나와요
+    // =======================================================================
+    @GetMapping("/discover")
+    public ResponseEntity<?> discover(
+            @AuthenticationPrincipal User user,
+            @RequestParam(value = "q", required = false) String q) {
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "로그인이 필요해요."));
+        }
+        try {
+            return ResponseEntity.ok(friendService.discover(user.getId(), q));
+        } catch (Exception e) {
+            log.error("❌ 뉴유 친구 목록 오류", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "서버 오류: " + e.getMessage()));
+        }
+    }
+
+    // =======================================================================
+    // ➕ 아이디로 친구 추가 (POST /api/friends/add-by-id  { "loginId": "xxx" })
+    //    New You 앱을 쓰는 사람만 추가돼요. 추가하면 바로 아이디로 연결돼요.
+    // =======================================================================
+    @PostMapping("/add-by-id")
+    public ResponseEntity<?> addByLoginId(
+            @AuthenticationPrincipal User user,
+            @RequestBody Map<String, String> body) {
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "로그인이 필요해요."));
+        }
+        try {
+            Friend friend = friendService.addByLoginId(user.getId(), body == null ? null : body.get("loginId"));
+            return ResponseEntity.status(HttpStatus.CREATED).body(friend);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            log.error("❌ 아이디로 친구 추가 오류", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", "서버 오류: " + e.getMessage()));
+        }
+    }
+
+    // =======================================================================
     // 1. 친구 추가 (POST /api/friends)
     // =======================================================================
     @PostMapping
